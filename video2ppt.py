@@ -35,13 +35,26 @@ def get_coordinate_by_click(frame):
 
 
 def time_string_to_seconds(time_string):
+    if time_string is None:
+        return None
     time_format = "%H:%M:%S"
     time_obj = datetime.strptime(time_string, time_format)
     total_seconds = time_obj.hour * 3600 + time_obj.minute * 60 + time_obj.second
     return total_seconds
 
 
-def extract_key_frames(video_path, start_time=None, end_time=None, top_left=None, bottom_right=None, threshold=0.8):
+def calc_similarity(img1, img2):
+    # 转换为HSV并计算直方图
+    hist1 = cv2.calcHist([img1], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    hist2 = cv2.calcHist([img2], [0, 1, 2], None, [8, 8, 8], [0, 256, 0, 256, 0, 256])
+    
+    # 归一化并比较直方图（值越接近1越相似）
+    cv2.normalize(hist1, hist1, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+    cv2.normalize(hist2, hist2, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
+    return cv2.compareHist(hist1, hist2, cv2.HISTCMP_CORREL)
+
+
+def extract_key_frames(video_path, start_time=None, end_time=None, top_left=None, bottom_right=None, threshold=0.999):
     output_dir = video_path + ".frames"
 
     start_time = time_string_to_seconds(start_time)
@@ -60,6 +73,7 @@ def extract_key_frames(video_path, start_time=None, end_time=None, top_left=None
 
     index = 0
     previous_frame = None
+    similarity_list = []
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -79,16 +93,13 @@ def extract_key_frames(video_path, start_time=None, end_time=None, top_left=None
             frame = frame[top_left[1]:bottom_right[1], top_left[0]:bottom_right[0]]
 
         if previous_frame is not None:
-            diff = cv2.absdiff(previous_frame, frame)
-            non_zero_count = np.count_nonzero(diff)
-            total_pixels = diff.size
-            
-            # 计算差异比例
-            diff_ratio = non_zero_count / total_pixels
+            similarity = calc_similarity(previous_frame, frame)
+            similarity_list.append(similarity)
 
-            if diff_ratio < threshold:
+            if similarity > threshold:
                 continue
-            print(f"index: {index}, diff_ratio: {diff_ratio}")
+
+            print(f"index: {index}, similarity: {similarity}")
 
         cv2.imwrite(f"{output_dir}/{index}.jpg", frame)
         previous_frame = frame
@@ -96,9 +107,14 @@ def extract_key_frames(video_path, start_time=None, end_time=None, top_left=None
     cap.release()
     cv2.destroyAllWindows()
 
+    # import matplotlib.pyplot as plt
+    # plt.plot(similarity_list, marker="o")
+    # plt.grid()
+    # plt.show()
+
 
 if __name__ == "__main__":
-    video_path = "2023_4_15_赵声良《犍陀罗与敦煌》_哔哩哔哩_bilibili.mp4"
-    start_time = "00:25:00"
-    end_time = "01:17:50"
+    video_path = "/path/to/video.mp4"
+    start_time = "00:00:00"
+    end_time = None
     extract_key_frames(video_path, start_time, end_time)
